@@ -19,7 +19,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 
 install_requires = []
 tests_require = []
