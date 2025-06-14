@@ -1,5 +1,5 @@
 import zlib
-from typing import Optional
+from typing import Optional, Union
 
 from ._exceptions import WebSocketProtocolException, WebSocketPayloadException
 from ._abnf import ABNF
@@ -61,8 +61,8 @@ class CompressionOptions:
         self,
         server_no_context_takeover: bool = False,
         client_no_context_takeover: bool = False,
-        server_max_window_bits: int | None = None,
-        client_max_window_bits: int | bool | None = 12,
+        server_max_window_bits: Optional[int] = None,
+        client_max_window_bits: Union[int, bool, None] = 12,
     ) -> None:
         # note: isinstance(client_max_window_bits, int) returns True for bool as well
         if (
