@@ -166,7 +166,12 @@ class WebSocketApp:
         self.has_done_teardown = False
         self.has_done_teardown_lock = threading.Lock()
 
-    def send(self, data: Union[bytes, str], opcode: int = ABNF.OPCODE_TEXT, use_frame_mask: bool = True) -> None:
+    def send(
+        self,
+        data: Union[bytes, str],
+        opcode: int = ABNF.OPCODE_TEXT,
+        use_frame_mask: bool = True,
+    ) -> None:
         """
         send message
 
@@ -489,7 +494,7 @@ class WebSocketApp:
                 SystemExit,
                 Exception,
                 str,
-            ] = "closed unexpectedly"
+            ] = "closed unexpectedly",
         ) -> bool:
             if type(e) is str:
                 e = WebSocketConnectionClosedException(e)

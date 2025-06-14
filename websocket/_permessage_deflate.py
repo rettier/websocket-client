@@ -20,7 +20,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
---- 
+---
 
 This code is based on work of the python websockets library
 https://github.com/python-websockets/websockets
@@ -51,18 +51,24 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
 """
+
 
 class CompressionOptions:
     def __init__(
-            self,
-            server_no_context_takeover: bool = False,
-            client_no_context_takeover: bool = False,
-            server_max_window_bits: int | None = None,
-            client_max_window_bits: int | bool | None = 12
+        self,
+        server_no_context_takeover: bool = False,
+        client_no_context_takeover: bool = False,
+        server_max_window_bits: int | None = None,
+        client_max_window_bits: int | bool | None = 12,
     ) -> None:
         # note: isinstance(client_max_window_bits, int) returns True for bool as well
-        if type(client_max_window_bits) == int and not 8 <= client_max_window_bits <= 15:
+        if (
+            type(client_max_window_bits) is int
+            and not 8 <= client_max_window_bits <= 15
+        ):
             raise ValueError("client_max_window_bits must be between 8 and 15 or None")
         if server_max_window_bits and not 8 <= server_max_window_bits <= 15:
             raise ValueError("server_max_window_bits must be between 8 and 15 or None")
@@ -81,7 +87,7 @@ class CompressionOptions:
             options.append("client_no_context_takeover")
         if isinstance(self.server_max_window_bits, int):
             options.append(f"server_max_window_bits={self.server_max_window_bits}")
-        if type(self.client_max_window_bits) == int:  # see note in __init__
+        if type(self.client_max_window_bits) is int:  # see note in __init__
             options.append(f"client_max_window_bits={self.client_max_window_bits}")
         elif self.client_max_window_bits is not None:
             options.append("client_max_window_bits")
@@ -89,8 +95,7 @@ class CompressionOptions:
         return "; ".join(options)
 
     def negotiate(
-            self,
-            agreed_parameters: "CompressionOptions"
+        self, agreed_parameters: "CompressionOptions"
     ) -> "CompressionOptions":
         """
         Negotiate compression options with the server's response and return the final options
@@ -101,15 +106,23 @@ class CompressionOptions:
             server_no_context_takeover=agreed_parameters.server_no_context_takeover,
             client_no_context_takeover=agreed_parameters.client_no_context_takeover,
             server_max_window_bits=agreed_parameters.server_max_window_bits,
-            client_max_window_bits=agreed_parameters.client_max_window_bits
+            client_max_window_bits=agreed_parameters.client_max_window_bits,
         )
 
         # server_no_context_takeover
-        if self.server_no_context_takeover and not agreed_parameters.server_no_context_takeover:
-            raise ValueError("Server does not allow context takeover, but we requested it.")
+        if (
+            self.server_no_context_takeover
+            and not agreed_parameters.server_no_context_takeover
+        ):
+            raise ValueError(
+                "Server does not allow context takeover, but we requested it."
+            )
 
         # client_no_context_takeover
-        if self.client_no_context_takeover and not agreed_parameters.client_no_context_takeover:
+        if (
+            self.client_no_context_takeover
+            and not agreed_parameters.client_no_context_takeover
+        ):
             # rfc7692 - page 20
             agreed_parameters.client_no_context_takeover = True
 
@@ -117,7 +130,9 @@ class CompressionOptions:
         # when requested by us, server must set it to the same value or lower
         if self.server_max_window_bits:
             if not agreed_parameters.server_max_window_bits:
-                raise ValueError("Server did not provide server_max_window_bits, but we requested it.")
+                raise ValueError(
+                    "Server did not provide server_max_window_bits, but we requested it."
+                )
             if agreed_parameters.server_max_window_bits > self.server_max_window_bits:
                 raise ValueError(
                     f"Server provided server_max_window_bits={agreed_parameters.server_max_window_bits}, "
@@ -128,10 +143,12 @@ class CompressionOptions:
         # if we did not send any client_max_window_bits, server must not set it either (rfc7692 - page 17)
         if self.client_max_window_bits is None:
             if agreed_parameters.client_max_window_bits is not None:
-                raise ValueError("Server provided client_max_window_bits, but we did not specify we support it.")
+                raise ValueError(
+                    "Server provided client_max_window_bits, but we did not specify we support it."
+                )
 
         # if we sent a client_max_window_bits, server must set it to the same value or lower
-        elif type(self.client_max_window_bits) == int:
+        elif type(self.client_max_window_bits) is int:
             if not agreed_parameters.client_max_window_bits:
                 # server did not provide client_max_window_bits, we are allowed to use our value
                 agreed_parameters.client_max_window_bits = self.client_max_window_bits
@@ -142,8 +159,12 @@ class CompressionOptions:
                 )
 
         # if left unspecified by the negotiation, set defaults
-        agreed_parameters.client_max_window_bits = agreed_parameters.client_max_window_bits or 15
-        agreed_parameters.server_max_window_bits = agreed_parameters.server_max_window_bits or 15
+        agreed_parameters.client_max_window_bits = (
+            agreed_parameters.client_max_window_bits or 15
+        )
+        agreed_parameters.server_max_window_bits = (
+            agreed_parameters.server_max_window_bits or 15
+        )
         return agreed_parameters
 
     @classmethod
@@ -168,31 +189,26 @@ class CompressionOptions:
             elif option.startswith("server_max_window_bits"):
                 server_max_window_bits = int(option.split("=")[1])
             elif option.startswith("client_max_window_bits"):
-                client_max_window_bits = int(option.split("=")[1]) if "=" in option else True
+                client_max_window_bits = (
+                    int(option.split("=")[1]) if "=" in option else True
+                )
 
         return cls(
             server_no_context_takeover=server_no_context_takeover,
             client_no_context_takeover=client_no_context_takeover,
             server_max_window_bits=server_max_window_bits,
-            client_max_window_bits=client_max_window_bits
+            client_max_window_bits=client_max_window_bits,
         )
 
 
 class CompressionExtension:
     _empty_uncompressed_block = b"\x00\x00\xff\xff"
-    _not_compressed_optcodes = (
-        ABNF.OPCODE_CLOSE,
-        ABNF.OPCODE_PING,
-        ABNF.OPCODE_PONG
-    )
+    _not_compressed_optcodes = (ABNF.OPCODE_CLOSE, ABNF.OPCODE_PING, ABNF.OPCODE_PONG)
 
     compressor: Optional[zlib.compressobj] = None
     decompressor: Optional[zlib.decompressobj] = None
 
-    def __init__(
-            self,
-            negotiated_options: CompressionOptions
-    ):
+    def __init__(self, negotiated_options: CompressionOptions):
         self.options = negotiated_options
         self._initial_frame_compressed = False
         self._reset_decompressor()
@@ -201,7 +217,9 @@ class CompressionExtension:
     def _reset_decompressor(self):
         if self.decompressor:
             del self.decompressor
-        self.decompressor = zlib.decompressobj(wbits=-self.options.server_max_window_bits)
+        self.decompressor = zlib.decompressobj(
+            wbits=-self.options.server_max_window_bits
+        )
 
     def _reset_compressor(self):
         if self.compressor:
@@ -218,7 +236,9 @@ class CompressionExtension:
             self._reset_compressor()
 
         # Compress data.
-        data = self.compressor.compress(abnf.data) + self.compressor.flush(zlib.Z_SYNC_FLUSH)
+        data = self.compressor.compress(abnf.data) + self.compressor.flush(
+            zlib.Z_SYNC_FLUSH
+        )
         if abnf.fin:
             # Sync flush generates between 5 or 6 bytes, ending with the bytes
             # 0x00 0x00 0xff 0xff, which must be removed.
@@ -236,14 +256,14 @@ class CompressionExtension:
             abnf.rsv3,
             abnf.opcode,
             abnf.mask_value,
-            data
+            data,
         )
 
     def decompress(
-            self,
-            abnf: ABNF,
-            *,
-            max_size: int | None = None,
+        self,
+        abnf: ABNF,
+        *,
+        max_size: int | None = None,
     ) -> ABNF:
         """
         Decode an incoming frame.
@@ -290,7 +310,9 @@ class CompressionExtension:
             data = self.decompressor.decompress(data, max_length)
             if self.decompressor.unconsumed_tail:
                 assert max_size is not None  # help mypy
-                raise WebSocketPayloadException(f"decompression produced more than {max_size} bytes of data")
+                raise WebSocketPayloadException(
+                    f"decompression produced more than {max_size} bytes of data"
+                )
             if abnf.fin and len(abnf.data) >= 2044:
                 # This cannot generate additional data.
                 self.decompressor.decompress(self._empty_uncompressed_block)
@@ -298,11 +320,5 @@ class CompressionExtension:
             raise WebSocketProtocolException("decompression failed") from exc
 
         return ABNF(
-            abnf.fin,
-            0,
-            abnf.rsv2,
-            abnf.rsv3,
-            abnf.opcode,
-            abnf.mask_value,
-            data
+            abnf.fin, 0, abnf.rsv2, abnf.rsv3, abnf.opcode, abnf.mask_value, data
         )

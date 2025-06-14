@@ -181,7 +181,11 @@ class ABNF:
         if self.opcode not in ABNF.OPCODES:
             raise WebSocketProtocolException("Invalid opcode %r", self.opcode)
 
-        if self.rsv1 and self.opcode in (ABNF.OPCODE_PING, ABNF.OPCODE_PONG, ABNF.OPCODE_CLOSE):
+        if self.rsv1 and self.opcode in (
+            ABNF.OPCODE_PING,
+            ABNF.OPCODE_PONG,
+            ABNF.OPCODE_CLOSE,
+        ):
             raise WebSocketProtocolException("rsv1 is not allowed for control frames.")
 
         if self.opcode == ABNF.OPCODE_PING and not self.fin:
@@ -208,7 +212,9 @@ class ABNF:
         return f"fin={self.fin} opcode={self.opcode} data={self.data}"
 
     @staticmethod
-    def create_frame(data: Union[bytes, str], opcode: int, fin: int = 1, use_frame_mask: bool = True) -> "ABNF":
+    def create_frame(
+        data: Union[bytes, str], opcode: int, fin: int = 1, use_frame_mask: bool = True
+    ) -> "ABNF":
         """
         Create frame to send text, binary and other data.
 

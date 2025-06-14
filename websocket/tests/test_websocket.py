@@ -40,6 +40,7 @@ except ImportError:
     class SSLError(Exception):
         pass
 
+
 # Skip test to access the internet unless TEST_WITH_INTERNET == 1
 TEST_WITH_INTERNET = os.environ.get("TEST_WITH_INTERNET", "0") == "1"
 # Skip tests relying on local websockets server unless LOCAL_WS_SERVER_PORT != -1
@@ -497,13 +498,14 @@ class HandshakeTest(unittest.TestCase):
     )
     def test_websocket_with_compression(self):
         s: WebSocket = ws.create_connection(
-            f"ws://127.0.0.1:{LOCAL_WS_SERVER_PORT}",
-            compression=True
+            f"ws://127.0.0.1:{LOCAL_WS_SERVER_PORT}", compression=True
         )
 
         # Check if compression is enabled in server response
         self.assertIn("permessage-deflate", s.getheaders()["sec-websocket-extensions"])
-        self.assertIn("server_max_window_bits=", s.getheaders()["sec-websocket-extensions"])
+        self.assertIn(
+            "server_max_window_bits=", s.getheaders()["sec-websocket-extensions"]
+        )
 
         # check that we have setup our compression extension correctly
         self.assertIsNotNone(s.compression_extension)
