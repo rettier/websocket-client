@@ -63,20 +63,44 @@ class CompressionOptions:
         client_no_context_takeover: bool = False,
         server_max_window_bits: Optional[int] = None,
         client_max_window_bits: Union[int, bool, None] = 12,
+        zlib_compression_options: Optional[dict] = None,
+        max_size: Optional[int] = None,
     ) -> None:
+        """
+        Compression options for the permessage-deflate extension.
+
+        :param server_no_context_takeover: If True, the server does not allow context takeover.
+        :param client_no_context_takeover: If True, the client does not allow context takeover.
+        :param server_max_window_bits: The maximum window size for the server (8-15).
+        :param client_max_window_bits: The maximum window size for the client (8-15) or None to not send it.
+        :param zlib_compression_options: Additional options for zlib compression.
+        :param max_size:
+            Maximum size of the decompressed data, None for no limit.
+            this parameter avoids zip bombs by limiting the size of the decompressed data.
+        """
+
         # note: isinstance(client_max_window_bits, int) returns True for bool as well
         if (
             type(client_max_window_bits) is int
             and not 8 <= client_max_window_bits <= 15
         ):
             raise ValueError("client_max_window_bits must be between 8 and 15 or None")
+
         if server_max_window_bits and not 8 <= server_max_window_bits <= 15:
             raise ValueError("server_max_window_bits must be between 8 and 15 or None")
+
+        self.zlib_compression_options = zlib_compression_options or {"memLevel": 5}
+        if "wbits" in self.zlib_compression_options:
+            raise ValueError(
+                "zlib_compression_options should not contain 'wbits', "
+                "use server_max_window_bits and client_max_window_bits instead."
+            )
 
         self.server_no_context_takeover = server_no_context_takeover
         self.client_no_context_takeover = client_no_context_takeover
         self.server_max_window_bits = server_max_window_bits
         self.client_max_window_bits = client_max_window_bits
+        self.max_size = max_size
 
     def to_header(self) -> str:
         options = ["permessage-deflate"]
@@ -107,6 +131,9 @@ class CompressionOptions:
             client_no_context_takeover=agreed_parameters.client_no_context_takeover,
             server_max_window_bits=agreed_parameters.server_max_window_bits,
             client_max_window_bits=agreed_parameters.client_max_window_bits,
+            # client only parameters, not part of the negotiation,
+            zlib_compression_options={**self.zlib_compression_options},
+            max_size=self.max_size,
         )
 
         # server_no_context_takeover
@@ -165,12 +192,15 @@ class CompressionOptions:
         agreed_parameters.server_max_window_bits = (
             agreed_parameters.server_max_window_bits or 15
         )
+
         return agreed_parameters
 
     @classmethod
-    def from_header(cls, header: str) -> "CompressionOptions":
+    def from_header(cls, header: str) -> Union["CompressionOptions", None]:
         """
         Create a CompressionOptions instance from the header string.
+        Returns None if the header does not contain the permessage-deflate extension, indicating
+        that the server does not support it.
         """
 
         options = header.lower().split(";")
@@ -178,11 +208,14 @@ class CompressionOptions:
         client_no_context_takeover = False
         server_max_window_bits = None
         client_max_window_bits = None
+        extension_enabled = False
 
         for option in options:
             option = option.strip()
 
-            if option == "server_no_context_takeover":
+            if option == "permessage-deflate":
+                extension_enabled = True
+            elif option == "server_no_context_takeover":
                 server_no_context_takeover = True
             elif option == "client_no_context_takeover":
                 client_no_context_takeover = True
@@ -193,12 +226,15 @@ class CompressionOptions:
                     int(option.split("=")[1]) if "=" in option else True
                 )
 
-        return cls(
-            server_no_context_takeover=server_no_context_takeover,
-            client_no_context_takeover=client_no_context_takeover,
-            server_max_window_bits=server_max_window_bits,
-            client_max_window_bits=client_max_window_bits,
-        )
+        if extension_enabled:
+            return cls(
+                server_no_context_takeover=server_no_context_takeover,
+                client_no_context_takeover=client_no_context_takeover,
+                server_max_window_bits=server_max_window_bits,
+                client_max_window_bits=client_max_window_bits,
+            )
+        else:
+            return None
 
 
 class CompressionExtension:
@@ -224,7 +260,10 @@ class CompressionExtension:
     def _reset_compressor(self):
         if self.compressor:
             del self.compressor
-        self.compressor = zlib.compressobj(wbits=-self.options.client_max_window_bits)
+        self.compressor = zlib.compressobj(
+            wbits=-self.options.client_max_window_bits,
+            **self.options.zlib_compression_options,
+        )
 
     def compress(self, abnf: ABNF) -> ABNF:
         # Skip control frames.
@@ -259,12 +298,7 @@ class CompressionExtension:
             data,
         )
 
-    def decompress(
-        self,
-        abnf: ABNF,
-        *,
-        max_size: int | None = None,
-    ) -> ABNF:
+    def decompress(self, abnf: ABNF) -> ABNF:
         """
         Decode an incoming frame.
 
@@ -305,13 +339,12 @@ class CompressionExtension:
             data = bytes(abnf.data) + self._empty_uncompressed_block
         else:
             data = abnf.data
-        max_length = 0 if max_size is None else max_size
+        max_length = 0 if self.options.max_size is None else self.options.max_size
         try:
             data = self.decompressor.decompress(data, max_length)
             if self.decompressor.unconsumed_tail:
-                assert max_size is not None  # help mypy
                 raise WebSocketPayloadException(
-                    f"decompression produced more than {max_size} bytes of data"
+                    f"decompression produced more than {self.options.max_size} bytes of data"
                 )
             if abnf.fin and len(abnf.data) >= 2044:
                 # This cannot generate additional data.

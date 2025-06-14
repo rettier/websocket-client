@@ -290,9 +290,12 @@ class WebSocket:
                 agreed_options = CompressionOptions.from_header(
                     self.handshake_response.headers.get("sec-websocket-extensions", "")
                 )
-                self.compression_extension = CompressionExtension(
-                    self.compression.negotiate(agreed_options)
-                )
+                if agreed_options is not None:
+                    self.compression_extension = CompressionExtension(
+                        self.compression.negotiate(agreed_options)
+                    )
+                else:
+                    self.compression_extension = None
 
             self.connected = True
         except:

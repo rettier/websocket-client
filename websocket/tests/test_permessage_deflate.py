@@ -2,8 +2,8 @@ import os
 import unittest
 
 import websocket as ws
-from websocket import WebSocket
-from websocket._permessage_deflate import CompressionOptions
+from websocket import WebSocket, ABNF, WebSocketPayloadException
+from websocket._permessage_deflate import CompressionOptions, CompressionExtension
 
 """
 test_permessage_deflate.py
@@ -55,7 +55,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 """
-
 
 # Skip test to access the internet unless TEST_WITH_INTERNET == 1
 TEST_WITH_INTERNET = os.environ.get("TEST_WITH_INTERNET", "0") == "1"
@@ -210,6 +209,47 @@ class CompressionOptionsParserTest(unittest.TestCase):
 
 
 class CompressionEndToEndTests(unittest.TestCase):
+    def test_decompression_size_limit(self):
+        ce = CompressionExtension(
+            CompressionOptions(False, False, 12, 12, max_size=1024 * 512)
+        )
+
+        frame = ABNF(1, 0, 0, 0, ABNF.OPCODE_TEXT, 1, b"A" * 1024 * 1024)
+
+        # note: compression is not affected by the max_size parameter, it only tries to avoid attacks from a malicious server
+        compressed_frame = ce.compress(frame)
+
+        # ensure the data was significantly compressed
+        self.assertLess(len(compressed_frame.data), 1536)  # 1.5Kb
+
+        # decompress the frame
+        with self.assertRaises(WebSocketPayloadException):
+            # decompressing should fail due to size limit
+            ce.decompress(compressed_frame)
+
+    @unittest.skipUnless(TEST_WITH_INTERNET, "Internet-requiring tests are disabled")
+    def test_server_does_not_support_compression(self):
+        # at the time of writing this test, the Bitfinex websocket API does not support compression
+        # and will answer without a extension header entirely
+        s: WebSocket = ws.create_connection(
+            "wss://api.bitfinex.com/ws/2", compression=True
+        )
+
+        headers = s.getheaders()
+        self.assertNotIn("permessage-deflate", str(headers))
+
+        # we have compression options, but no compression extension
+        self.assertIsNotNone(s.compression)
+        self.assertIsNone(s.compression_extension)
+
+        # communication works
+        s.send('{"event": "subscribe", "channel": "ticker"}')
+        count = 2
+        for _ in s:
+            count -= 1
+            if count == 0:
+                break
+
     @unittest.skipUnless(
         TEST_WITH_LOCAL_SERVER, "Tests using local websocket server are disabled"
     )
