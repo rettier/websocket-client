@@ -45,7 +45,7 @@ class ABNFTest(unittest.TestCase):
             a_invalid_ping.validate,
             skip_utf8_validation=False,
         )
-        a_bad_rsv_value = ABNF(0, 1, 0, 0, opcode=ABNF.OPCODE_TEXT)
+        a_bad_rsv_value = ABNF(0, 1, 0, 0, opcode=ABNF.OPCODE_PING)
         self.assertRaises(
             WebSocketProtocolException,
             a_bad_rsv_value.validate,
