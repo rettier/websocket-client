@@ -262,7 +262,9 @@ class WebSocket:
         socket: socket
             Pre-initialized stream socket.
         """
-        options["compression"] = self._set_compression(options.get("compression", self.compression))
+        options["compression"] = self._set_compression(
+            options.get("compression", self.compression)
+        )
         self.sock_opt.timeout = options.get("timeout", self.sock_opt.timeout)
         self.sock, addrs = connect(
             url, self.sock_opt, proxy_info(**options), options.pop("socket", None)
@@ -286,8 +288,14 @@ class WebSocket:
 
             if self.compression:
                 agreed_options = CompressionOptions.from_header(
-                    self.handshake_response.headers.get("sec-websocket-extensions", ""))
-                self.compression_extension = CompressionExtension(self.compression.negotiate(agreed_options))
+                    self.handshake_response.headers.get("sec-websocket-extensions", "")
+                )
+                if agreed_options is not None:
+                    self.compression_extension = CompressionExtension(
+                        self.compression.negotiate(agreed_options)
+                    )
+                else:
+                    self.compression_extension = None
 
             self.connected = True
         except:
@@ -592,7 +600,9 @@ class WebSocket:
             self.connected = False
             raise
 
-    def _set_compression(self, compression: Union[CompressionOptions, bool]) -> CompressionOptions:
+    def _set_compression(
+        self, compression: Union[CompressionOptions, bool]
+    ) -> CompressionOptions:
         """
         sets the compression options, uses the default options if compression is True
         also returns the current compression options

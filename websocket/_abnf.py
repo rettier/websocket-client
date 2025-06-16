@@ -181,7 +181,11 @@ class ABNF:
         if self.opcode not in ABNF.OPCODES:
             raise WebSocketProtocolException("Invalid opcode %r", self.opcode)
 
-        if self.rsv1 and self.opcode in (ABNF.OPCODE_PING, ABNF.OPCODE_PONG, ABNF.OPCODE_CLOSE):
+        if self.rsv1 and self.opcode in (
+            ABNF.OPCODE_PING,
+            ABNF.OPCODE_PONG,
+            ABNF.OPCODE_CLOSE,
+        ):
             raise WebSocketProtocolException("rsv1 is not allowed for control frames.")
 
         if self.opcode == ABNF.OPCODE_PING and not self.fin:

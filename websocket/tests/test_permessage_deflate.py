@@ -2,8 +2,8 @@ import os
 import unittest
 
 import websocket as ws
-from websocket import WebSocket
-from websocket._permessage_deflate import CompressionOptions
+from websocket import WebSocket, ABNF, WebSocketPayloadException
+from websocket._permessage_deflate import CompressionOptions, CompressionExtension
 
 """
 test_permessage_deflate.py
@@ -21,7 +21,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
---- 
+---
 
 This code is based on work of the python websockets library
 https://github.com/python-websockets/websockets
@@ -52,6 +52,8 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
 """
 
 # Skip test to access the internet unless TEST_WITH_INTERNET == 1
@@ -65,32 +67,42 @@ TRACEABLE = True
 class CompressionOptionsParserTest(unittest.TestCase):
     def test_serialize_to_header(self):
         options = CompressionOptions(False, False, 10, 11)
-        self.assertEqual("permessage-deflate; server_max_window_bits=10; client_max_window_bits=11",
-                         options.to_header())
+        self.assertEqual(
+            "permessage-deflate; server_max_window_bits=10; client_max_window_bits=11",
+            options.to_header(),
+        )
 
         options = CompressionOptions(client_max_window_bits=True)
-        self.assertEqual("permessage-deflate; client_max_window_bits", options.to_header())
+        self.assertEqual(
+            "permessage-deflate; client_max_window_bits", options.to_header()
+        )
 
         options = CompressionOptions(True, True, client_max_window_bits=None)
-        self.assertEqual("permessage-deflate; server_no_context_takeover; client_no_context_takeover",
-                         options.to_header())
+        self.assertEqual(
+            "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+            options.to_header(),
+        )
 
     def test_deserialize_from_header(self):
         options = CompressionOptions.from_header(
-            "permessage-deflate; server_max_window_bits=10; client_max_window_bits=11")
+            "permessage-deflate; server_max_window_bits=10; client_max_window_bits=11"
+        )
         self.assertEqual(10, options.server_max_window_bits)
         self.assertEqual(11, options.client_max_window_bits)
         self.assertFalse(options.server_no_context_takeover)
         self.assertFalse(options.client_no_context_takeover)
 
-        options = CompressionOptions.from_header("permessage-deflate; client_max_window_bits;")
+        options = CompressionOptions.from_header(
+            "permessage-deflate; client_max_window_bits;"
+        )
         self.assertIsNone(options.server_max_window_bits)
         self.assertTrue(options.client_max_window_bits)
         self.assertFalse(options.server_no_context_takeover)
         self.assertFalse(options.client_no_context_takeover)
 
         options = CompressionOptions.from_header(
-            "permessage-deflate; server_no_context_takeover;   client_no_context_takeover")
+            "permessage-deflate; server_no_context_takeover;   client_no_context_takeover"
+        )
         self.assertIsNone(options.server_max_window_bits)
         self.assertIsNone(options.client_max_window_bits)
         self.assertTrue(options.server_no_context_takeover)
@@ -197,6 +209,47 @@ class CompressionOptionsParserTest(unittest.TestCase):
 
 
 class CompressionEndToEndTests(unittest.TestCase):
+    def test_decompression_size_limit(self):
+        ce = CompressionExtension(
+            CompressionOptions(False, False, 12, 12, max_size=1024 * 512)
+        )
+
+        frame = ABNF(1, 0, 0, 0, ABNF.OPCODE_TEXT, 1, b"A" * 1024 * 1024)
+
+        # note: compression is not affected by the max_size parameter, it only tries to avoid attacks from a malicious server
+        compressed_frame = ce.compress(frame)
+
+        # ensure the data was significantly compressed
+        self.assertLess(len(compressed_frame.data), 1536)  # 1.5Kb
+
+        # decompress the frame
+        with self.assertRaises(WebSocketPayloadException):
+            # decompressing should fail due to size limit
+            ce.decompress(compressed_frame)
+
+    @unittest.skipUnless(TEST_WITH_INTERNET, "Internet-requiring tests are disabled")
+    def test_server_does_not_support_compression(self):
+        # at the time of writing this test, the Bitfinex websocket API does not support compression
+        # and will answer without a extension header entirely
+        s: WebSocket = ws.create_connection(
+            "wss://api.bitfinex.com/ws/2", compression=True
+        )
+
+        headers = s.getheaders()
+        self.assertNotIn("permessage-deflate", str(headers))
+
+        # we have compression options, but no compression extension
+        self.assertIsNotNone(s.compression)
+        self.assertIsNone(s.compression_extension)
+
+        # communication works
+        s.send('{"event": "subscribe", "channel": "ticker"}')
+        count = 2
+        for _ in s:
+            count -= 1
+            if count == 0:
+                break
+
     @unittest.skipUnless(
         TEST_WITH_LOCAL_SERVER, "Tests using local websocket server are disabled"
     )
