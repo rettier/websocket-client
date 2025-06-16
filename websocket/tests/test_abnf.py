@@ -51,6 +51,12 @@ class ABNFTest(unittest.TestCase):
             a_bad_rsv_value.validate,
             skip_utf8_validation=False,
         )
+        a_bad_rsv_value2 = ABNF(0, 0, 1, 0, opcode=ABNF.OPCODE_TEXT)
+        self.assertRaises(
+            WebSocketProtocolException,
+            a_bad_rsv_value2.validate,
+            skip_utf8_validation=False,
+        )
         a_bad_opcode = ABNF(0, 0, 0, 0, opcode=77)
         self.assertRaises(
             WebSocketProtocolException,
