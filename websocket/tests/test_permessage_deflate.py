@@ -1,5 +1,6 @@
 import os
 import unittest
+from pprint import pprint
 
 import websocket as ws
 from websocket import WebSocket, ABNF, WebSocketPayloadException
@@ -64,7 +65,7 @@ TEST_WITH_LOCAL_SERVER = LOCAL_WS_SERVER_PORT != "-1"
 TRACEABLE = True
 
 
-class CompressionOptionsParserTest(unittest.TestCase):
+class CompressionUnitTests(unittest.TestCase):
     def test_serialize_to_header(self):
         options = CompressionOptions(False, False, 10, 11)
         self.assertEqual(
@@ -207,12 +208,12 @@ class CompressionOptionsParserTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             options_10.negotiate(options_12)
 
-
-class CompressionEndToEndTests(unittest.TestCase):
     def test_decompression_size_limit(self):
-        ce = CompressionExtension(
-            CompressionOptions(False, False, 12, 12, max_size=1024 * 512)
-        )
+        """
+        Tests that the decompression size limit is enforced correctly if specified.
+        """
+        options = CompressionOptions(True, True, 12, 12, max_size=1024 * 512)
+        ce = CompressionExtension(options)
 
         frame = ABNF(1, 0, 0, 0, ABNF.OPCODE_TEXT, 1, b"A" * 1024 * 1024)
 
@@ -222,11 +223,57 @@ class CompressionEndToEndTests(unittest.TestCase):
         # ensure the data was significantly compressed
         self.assertLess(len(compressed_frame.data), 1536)  # 1.5Kb
 
-        # decompress the frame
-        with self.assertRaises(WebSocketPayloadException):
-            # decompressing should fail due to size limit
+        with self.subTest("decompression with size limit fails"):
+            with self.assertRaises(WebSocketPayloadException):
+                ce.decompress(compressed_frame)
+
+        with self.subTest("decompression with a large enough size limit succeeds"):
+            ce.options.max_size = 1024 * 1024 * 2  # 2Mb
             ce.decompress(compressed_frame)
 
+    def test_client_side_compression_options_are_used(self):
+        """
+        test that the zlib compression options are correctly used on the client side compressor,
+        and that disallowed settings (wbits) may not be set
+        """
+
+        with self.subTest("wbits is not allowed"):
+            with self.assertRaises(ValueError):
+                CompressionOptions(
+                    True,
+                    True,
+                    12,
+                    12,
+                    max_size=1024 * 512,
+                    zlib_compression_options={"wbits": 15},
+                )
+
+        with self.subTest("unknown arguments raise an exception"):
+            options = CompressionOptions(
+                True,
+                True,
+                12,
+                12,
+                max_size=1024 * 512,
+                zlib_compression_options={"unknownArgument": "test"},
+            )
+            with self.assertRaises(TypeError):
+                CompressionExtension(options)
+
+        with self.subTest("valid zlib compression options"):
+            options = CompressionOptions(
+                True,
+                True,
+                12,
+                12,
+                max_size=1024 * 512,
+                zlib_compression_options={"memLevel": 9},
+            )
+            ce = CompressionExtension(options)
+            self.assertIsNotNone(ce.compressor)
+
+
+class CompressionEndToEndTests(unittest.TestCase):
     @unittest.skipUnless(TEST_WITH_INTERNET, "Internet-requiring tests are disabled")
     def test_server_does_not_support_compression(self):
         # at the time of writing this test, the Bitfinex websocket API does not support compression
