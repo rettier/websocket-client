@@ -1,21 +1,18 @@
-import inspect
-import selectors
 import socket
 import threading
-import time
-from typing import Any, Callable, Optional, Union
 
 from . import _logging
 from ._abnf import ABNF
 from ._core import WebSocket, getdefaulttimeout
+from ._dispatcher import *
 from ._exceptions import (
     WebSocketConnectionClosedException,
     WebSocketException,
     WebSocketTimeoutException,
 )
+from ._permessage_deflate import CompressionOptions
 from ._ssl_compat import SSLEOFError
 from ._url import parse_url
-from ._dispatcher import *
 
 """
 _app.py
@@ -69,6 +66,7 @@ class WebSocketApp:
         subprotocols: Optional[list] = None,
         on_data: Optional[Callable] = None,
         socket: Optional[socket.socket] = None,
+        compression: Union[bool, CompressionOptions] = False,
     ) -> None:
         """
         WebSocketApp initialization
@@ -134,6 +132,9 @@ class WebSocketApp:
             List of available sub protocols. Default is None.
         socket: socket
             Pre-initialized stream socket.
+        compression: bool or CompressionOptions
+            Compression options to use. Set to True or CompressionOptions to enable
+            permessage-deflate extension. Defaults to False (no compression).
         """
         self.url = url
         self.header = header if header is not None else []
@@ -150,6 +151,7 @@ class WebSocketApp:
         self.on_cont_message = on_cont_message
         self.keep_running = False
         self.get_mask_key = get_mask_key
+        self.compression = compression
         self.sock: Optional[WebSocket] = None
         self.last_ping_tm = float(0)
         self.last_pong_tm = float(0)
@@ -164,7 +166,12 @@ class WebSocketApp:
         self.has_done_teardown = False
         self.has_done_teardown_lock = threading.Lock()
 
-    def send(self, data: Union[bytes, str], opcode: int = ABNF.OPCODE_TEXT) -> None:
+    def send(
+        self,
+        data: Union[bytes, str],
+        opcode: int = ABNF.OPCODE_TEXT,
+        use_frame_mask: bool = True,
+    ) -> None:
         """
         send message
 
@@ -175,9 +182,11 @@ class WebSocketApp:
             data must be utf-8 string or unicode.
         opcode: int
             Operation code of data. Default is OPCODE_TEXT.
+        use_frame_mask: bool
+            Whether to mask the data in the websocket frame sent. Default is True.
         """
 
-        if not self.sock or self.sock.send(data, opcode) == 0:
+        if not self.sock or self.sock.send(data, opcode, use_frame_mask) == 0:
             raise WebSocketConnectionClosedException("Connection is already closed.")
 
     def send_text(self, text_data: str) -> None:
@@ -347,13 +356,19 @@ class WebSocketApp:
 
             self._stop_ping_thread()
             self.keep_running = False
+
             if self.sock:
-                self.sock.close()
+                # in cases like handleDisconnect, the "on_error" callback is called first. If the WebSocketApp
+                # is being used in a multithreaded application, we nee to make sure that "self.sock" is cleared
+                # before calling close, otherwise logic built around the sock being set can cause issues -
+                # specifically calling "run_forever" again, since is checks if "self.sock" is set.
+                current_sock = self.sock
+                self.sock = None
+                current_sock.close()
+
             close_status_code, close_reason = self._get_close_args(
                 close_frame if close_frame else None
             )
-            self.sock = None
-
             # Finally call the callback AFTER all teardown is complete
             self._callback(self.on_close, close_status_code, close_reason)
 
@@ -369,6 +384,7 @@ class WebSocketApp:
                 skip_utf8_validation=skip_utf8_validation,
                 enable_multithread=True,
                 dispatcher=dispatcher,
+                compression=self.compression,
             )
 
             self.sock.settimeout(getdefaulttimeout())
@@ -478,7 +494,7 @@ class WebSocketApp:
                 SystemExit,
                 Exception,
                 str,
-            ] = "closed unexpectedly"
+            ] = "closed unexpectedly",
         ) -> bool:
             if type(e) is str:
                 e = WebSocketConnectionClosedException(e)
