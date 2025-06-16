@@ -342,6 +342,7 @@ class CompressionExtension:
         max_length = 0 if self.options.max_size is None else self.options.max_size
         try:
             data = self.decompressor.decompress(data, max_length)
+            print(self.decompressor.unconsumed_tail)
             if self.decompressor.unconsumed_tail:
                 raise WebSocketPayloadException(
                     f"decompression produced more than {self.options.max_size} bytes of data"
